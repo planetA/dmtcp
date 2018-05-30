@@ -120,7 +120,7 @@ ibv_query_gid(struct ibv_context *context,
   return rslt;
 }
 
-uint64_t
+__be64
 ibv_get_device_guid(struct ibv_device *device)
 {
   DMTCP_PLUGIN_DISABLE_CKPT();
