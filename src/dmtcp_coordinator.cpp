@@ -165,6 +165,8 @@ static DmtcpCoordinator prog;
 */
 static bool workersRunningAndSuspendMsgSent = false;
 
+static bool workersArePausing = false;
+
 static bool killInProgress = false;
 static bool uniqueCkptFilenames = false;
 
@@ -283,6 +285,30 @@ DmtcpCoordinator::handleUserCommand(char cmd, DmtcpMessage *reply /*= NULL*/)
   case 'c': case 'C':
     JTRACE("checkpointing...");
     if (startCheckpoint()) {
+      if (reply != NULL) {
+        reply->numPeers = getStatus().numPeers;
+      }
+    } else {
+      if (reply != NULL) {
+        reply->coordCmdStatus = CoordCmdStatus::ERROR_NOT_RUNNING_STATE;
+      }
+    }
+    break;
+  case 'p': case 'P':
+    JTRACE("Pausing...");
+    if (pauseWorkers()) {
+      if (reply != NULL) {
+        reply->numPeers = getStatus().numPeers;
+      }
+    } else {
+      if (reply != NULL) {
+        reply->coordCmdStatus = CoordCmdStatus::ERROR_NOT_RUNNING_STATE;
+      }
+    }
+    break;
+  case 'r': case 'R':
+    JTRACE("Resuming...");
+    if (resumeWorkers()) {
       if (reply != NULL) {
         reply->numPeers = getStatus().numPeers;
       }
@@ -1139,6 +1165,58 @@ DmtcpCoordinator::startCheckpoint()
     // state.  If the coordinator receives another checkpoint request from user
     // at this point, it should fail.
     workersRunningAndSuspendMsgSent = true;
+    return true;
+  } else {
+    if (s.numPeers > 0) {
+      JTRACE("delaying checkpoint, workers not ready") (s.minimumState)
+        (s.numPeers);
+    }
+    return false;
+  }
+}
+
+bool
+DmtcpCoordinator::pauseWorkers()
+{
+  nextCkptBarrier = nextRestartBarrier = 0;
+
+  ComputationStatus s = getStatus();
+  if (s.minimumState == WorkerState::RUNNING && s.minimumStateUnanimous
+      && !workersRunningAndSuspendMsgSent && !workersArePausing) {
+    compId.incrementGeneration();
+    JNOTE("Pausing workers; incrementing generation; suspending all nodes")
+      (s.numPeers) (compId.computationGeneration());
+
+    // Pass number of connected peers to all clients
+    broadcastMessage(DMT_DO_PAUSE);
+
+    // Suspend Message has been sent but the workers are still in running
+    // state.  If the coordinator receives another checkpoint request from user
+    // at this point, it should fail.
+    workersArePausing = true;
+    return true;
+  } else {
+    if (s.numPeers > 0) {
+      JTRACE("delaying checkpoint, workers not ready") (s.minimumState)
+        (s.numPeers);
+    }
+    return false;
+  }
+}
+
+bool
+DmtcpCoordinator::resumeWorkers()
+{
+  ComputationStatus s = getStatus();
+  if (s.minimumState == WorkerState::CHECKPOINTING && s.minimumStateUnanimous
+      && workersArePausing) {
+    compId.incrementGeneration();
+    JNOTE("Pausing workers; incrementing generation; suspending all nodes")
+      (s.numPeers) (compId.computationGeneration());
+
+    // Pass number of connected peers to all clients
+    broadcastMessage(DMT_DO_RESUME);
+    workersArePausing = false;
     return true;
   } else {
     if (s.numPeers > 0) {

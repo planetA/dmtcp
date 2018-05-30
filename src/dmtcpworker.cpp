@@ -60,6 +60,7 @@ EXTERNC void *ibv_get_device_list(void *) __attribute__((weak));
 DmtcpWorker DmtcpWorker::theInstance;
 bool DmtcpWorker::_exitInProgress = false;
 bool DmtcpWorker::_exitAfterCkpt = 0;
+bool DmtcpWorker::_inPause = 0;
 
 /* NOTE:  Please keep this function in sync with its copy at:
  *   dmtcp_nocheckpoint.cpp:restoreUserLDPRELOAD()
@@ -462,7 +463,11 @@ DmtcpWorker::waitForSuspendMessage()
     _exit(0);
   }
 
-  JASSERT(msg.type == DMT_DO_SUSPEND) (msg.type);
+  JASSERT(msg.type == DMT_DO_SUSPEND || msg.type == DMT_DO_PAUSE) (msg.type);
+
+  if (msg.type == DMT_DO_PAUSE) {
+    _inPause = true;
+  }
 
   // Coordinator sends some computation information along with the SUSPEND
   // message. Extracting that.
@@ -471,6 +476,38 @@ DmtcpWorker::waitForSuspendMessage()
     (SharedData::getCompId()) (msg.compGroup);
 
   _exitAfterCkpt = msg.exitAfterCkpt;
+}
+
+void
+DmtcpWorker::waitForResumeMessage()
+{
+  if (dmtcp_no_coordinator()) {
+    string shmFile = jalib::Filesystem::GetDeviceName(PROTECTED_SHM_FD);
+    JASSERT(!shmFile.empty());
+    unlink(shmFile.c_str());
+    CoordinatorAPI::waitForCheckpointCommand();
+    ProcessInfo::instance().numPeers(1);
+    ProcessInfo::instance().compGroup(SharedData::getCompId());
+    return;
+  }
+
+  JTRACE("waiting for RESUME message");
+
+  DmtcpMessage msg;
+  CoordinatorAPI::recvMsgFromCoordinator(&msg);
+
+  if (exitInProgress()) {
+    ThreadSync::destroyDmtcpWorkerLockUnlock();
+    ckptThreadPerformExit();
+  }
+
+  msg.assertValid();
+  if (msg.type == DMT_KILL_PEER) {
+    JTRACE("Received KILL message from coordinator, exiting");
+    _exit(0);
+  }
+
+  JASSERT(msg.type == DMT_DO_RESUME) (msg.type);
 }
 
 void
@@ -512,6 +549,16 @@ DmtcpWorker::waitForCheckpointRequest()
   JTRACE("Starting checkpoint, suspending...");
 }
 
+void
+DmtcpWorker::waitForResumeRequest()
+{
+  JTRACE("freezing");
+
+  waitForResumeMessage();
+
+  JTRACE("got UNFREEZE message, preparing to resume");
+}
+
 // now user threads are stopped
 void
 DmtcpWorker::preCheckpoint()
@@ -545,7 +592,12 @@ void
 DmtcpWorker::postCheckpoint()
 {
   WorkerState::setCurrentState(WorkerState::CHECKPOINTED);
-  CoordinatorAPI::sendCkptFilename();
+
+  if (!_inPause) {
+    CoordinatorAPI::sendCkptFilename();
+  } else {
+    _inPause = false;
+  }
 
   if (_exitAfterCkpt) {
     JTRACE("Asked to exit after checkpoint. Exiting!");

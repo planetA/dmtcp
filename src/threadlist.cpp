@@ -435,10 +435,15 @@ checkpointhread(void *dummy)
     JTRACE("Prepare plugin, etc. for checkpoint");
     DmtcpWorker::preCheckpoint();
 
-    /* All other threads halted in 'stopthisthread' routine (they are all
-     * in state ST_SUSPENDED).  It's safe to write checkpoint file now.
-     */
-    ThreadList::writeCkpt();
+    if (DmtcpWorker::paused()) {
+      // wait for an resume messsage
+      DmtcpWorker::waitForResumeRequest();
+    } else {
+      /* All other threads halted in 'stopthisthread' routine (they are all
+       * in state ST_SUSPENDED).  It's safe to write checkpoint file now.
+       */
+      ThreadList::writeCkpt();
+    }
 
     DmtcpWorker::postCheckpoint();
 

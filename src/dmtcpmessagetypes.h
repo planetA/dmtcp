@@ -59,6 +59,9 @@ enum DmtcpMessageType {
   DMT_DO_SUSPEND,            // when coordinator wants slave to suspend        8
   DMT_DO_CHECKPOINT,         // when coordinator wants slave to checkpoint
 
+  DMT_DO_PAUSE,              // when coordinator wants slave to pause
+  DMT_DO_RESUME,             // when coordinator resumes slave after a pause
+
   DMT_COMPUTATION_INFO,
 
   DMT_BARRIER_RELEASED,

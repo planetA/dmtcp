@@ -108,6 +108,8 @@ class DmtcpCoordinator
                           const void *extraData = NULL);
     void releaseBarrier(const string &barrier);
     bool startCheckpoint();
+    bool pauseWorkers();
+    bool resumeWorkers();
     void recordCkptFilename(CoordClient *client, const char *barrierList);
 
     void handleUserCommand(char cmd, DmtcpMessage *reply = NULL);

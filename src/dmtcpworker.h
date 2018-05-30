@@ -48,6 +48,10 @@ class DmtcpWorker
     static void acknowledgeSuspendMsg();
     static void informCoordinatorOfRUNNINGState();
 
+    static void waitForResumeMessage();
+    static void waitForResumeRequest();
+    static bool paused() { return _inPause; }
+
     static void waitForCheckpointRequest();
     static void preCheckpoint();
     static void postCheckpoint();
@@ -68,6 +72,7 @@ class DmtcpWorker
     static DmtcpWorker theInstance;
     static bool _exitInProgress;
     static bool _exitAfterCkpt;
+    static bool _inPause;
 };
 }
 #endif // ifndef DMTCPDMTCPWORKER_H
